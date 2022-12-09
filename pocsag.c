@@ -1,49 +1,61 @@
-#include <stdio.h>
-#include <furi.h>
-#include <gui/gui.h>
-#include <input/input.h>
-#include <notification/notification_messages.h>
+#include "pocsag.h"
+
+enum {
+    PocsagSubmenuIndexReceive,
+    PocsagSubmenuIndexSettings,
+};
 
 
-static void draw_callback(Canvas* canvas, void* ctx) {
-    UNUSED(ctx);
-
-    canvas_clear(canvas);
-    canvas_set_font(canvas, FontPrimary);
-    canvas_draw_str(canvas, 0, 10, "Hello World");
+uint32_t pocsag_exit(void* context) {
+    UNUSED(context);
+    return VIEW_NONE;
 }
 
 
-static void input_callback(InputEvent* input_event, void* ctx) {
-    furi_assert(ctx);
-    FuriMessageQueue* queue = ctx;
-    furi_message_queue_put(queue, input_event, FuriWaitForever);
+void pocsag_submenu_callback(void* context, uint32_t index) {
+    furi_assert(context);
+    PocsagApp* app = context;
+    UNUSED(app);
+    UNUSED(index);
+}
+
+
+PocsagApp* pocsag_app_alloc() {
+    PocsagApp* app = malloc(sizeof(PocsagApp));
+
+    app->gui = furi_record_open(RECORD_GUI);
+    app->view_dispatcher = view_dispatcher_alloc();
+    view_dispatcher_enable_queue(app->view_dispatcher);
+    view_dispatcher_attach_to_gui(app->view_dispatcher, app->gui, ViewDispatcherTypeFullscreen);
+
+    app->submenu = submenu_alloc();
+    submenu_add_item(app->submenu, "Receive", PocsagSubmenuIndexReceive, pocsag_submenu_callback, app);
+    submenu_add_item(app->submenu, "Settings", PocsagSubmenuIndexSettings, pocsag_submenu_callback, app);
+    view_set_previous_callback(submenu_get_view(app->submenu), pocsag_exit);
+    view_dispatcher_add_view(
+            app->view_dispatcher, PocsagViewSubmenu, submenu_get_view(app->submenu));
+
+    app->view_id = PocsagViewSubmenu;
+    view_dispatcher_switch_to_view(app->view_dispatcher, app->view_id);
+    return app;
+}
+
+
+void pocsag_app_free(PocsagApp* app) {
+    furi_assert(app);
+    view_dispatcher_remove_view(app->view_dispatcher, PocsagViewSubmenu);
+    submenu_free(app->submenu);
+    furi_record_close(RECORD_GUI);
+    app->gui = NULL;
+    free(app);
 }
 
 
 int32_t pocsag(void* p) {
     UNUSED(p);
 
-    InputEvent event;
-    FuriMessageQueue* event_queue = furi_message_queue_alloc(8, sizeof(InputEvent));
-    ViewPort* view_port = view_port_alloc();
-
-    view_port_draw_callback_set(view_port, draw_callback, NULL);
-    view_port_input_callback_set(view_port, input_callback, event_queue);
-
-    Gui* gui = furi_record_open(RECORD_GUI);
-    gui_add_view_port(gui, view_port, GuiLayerFullscreen);
-
-    while (1) {
-        furi_check(furi_message_queue_get(event_queue, &event, FuriWaitForever) == FuriStatusOk);
-        if (event.key == InputKeyBack) {
-            break;
-        }
-    }
-
-    furi_message_queue_free(event_queue);
-    gui_remove_view_port(gui, view_port);
-    view_port_free(view_port);
-    furi_record_close(RECORD_GUI);
+    PocsagApp* app = pocsag_app_alloc();
+    view_dispatcher_run(app->view_dispatcher);
+    pocsag_app_free(app);
     return 0;
 }
