@@ -1,9 +1,16 @@
 #include "pocsag.h"
+#include "core/pocsag_hal.h"
+
+#define TAG "POCSAG"
 
 enum {
     PocsagSubmenuIndexReceive,
-    PocsagSubmenuIndexSettings,
+    PocsagSubmenuIndexStopReceive,
+    PocsagSubmenuIndexTestSend,
 };
+
+#define FREQUENCY 433920000
+//439987500
 
 
 uint32_t pocsag_exit(void* context) {
@@ -12,11 +19,55 @@ uint32_t pocsag_exit(void* context) {
 }
 
 
-void pocsag_submenu_callback(void* context, uint32_t index) {
+void subghz_tx_rx_read_callback(void* context) {
     furi_assert(context);
     PocsagApp* app = context;
-    UNUSED(app);
-    UNUSED(index);
+    uint8_t data[16];
+    size_t cnt;
+
+    FURI_LOG_I(TAG, "Callback");
+    cnt = pocsag_tx_rx_worker_read(app->subghz_tx_rx, data, sizeof(data));
+    FURI_LOG_I(TAG, "%d", cnt);
+}
+
+
+void pocsag_submenu_callback(void* context, uint32_t index) {
+    uint8_t buf[] = {
+            1,2,3,4,5,6,7,8,9,0,
+            1,2,3,4,5,6,7,8,9,0,
+            1,2,3,4,5,6,7,8,9,0,
+            1,2,3,4,5,6,7,8,9,0,
+            1,2,3,4,5,6,7,8,9,0,
+            1,2,3,4,5,6,7,8,9,0,
+            1,2,3,4,5,6,7,8,9,0,
+            1,2,3,4,5,6,7,8,9,0,
+            1,2,3,4,5,6,7,8,9,0,
+            1,2,3,4,5,6,7,8,9,0,
+    };
+    furi_assert(context);
+    PocsagApp* app = context;
+
+    switch (index) {
+        case PocsagSubmenuIndexReceive:
+            if (pocsag_tx_rx_worker_is_running(app->subghz_tx_rx))
+                FURI_LOG_I(TAG, "Receiver is already running...");
+            else {
+                FURI_LOG_I(TAG, "Start receiver...");
+                furi_hal_power_suppress_charge_enter();
+                pocsag_tx_rx_worker_start(app->subghz_tx_rx, FREQUENCY);
+            }
+            break;
+        case PocsagSubmenuIndexStopReceive:
+            FURI_LOG_I(TAG, "Stop receiver...");
+            pocsag_tx_rx_worker_stop(app->subghz_tx_rx);
+            furi_hal_power_suppress_charge_exit();
+            break;
+        case PocsagSubmenuIndexTestSend:
+            if (pocsag_tx_rx_worker_is_running(app->subghz_tx_rx)) {
+                pocsag_tx_rx_worker_write(app->subghz_tx_rx, buf, sizeof(buf));
+            }
+            break;
+    }
 }
 
 
@@ -30,13 +81,19 @@ PocsagApp* pocsag_app_alloc() {
 
     app->submenu = submenu_alloc();
     submenu_add_item(app->submenu, "Receive", PocsagSubmenuIndexReceive, pocsag_submenu_callback, app);
-    submenu_add_item(app->submenu, "Settings", PocsagSubmenuIndexSettings, pocsag_submenu_callback, app);
+    submenu_add_item(app->submenu, "Stop receive", PocsagSubmenuIndexStopReceive, pocsag_submenu_callback, app);
+    submenu_add_item(app->submenu, "Test send", PocsagSubmenuIndexTestSend, pocsag_submenu_callback, app);
     view_set_previous_callback(submenu_get_view(app->submenu), pocsag_exit);
     view_dispatcher_add_view(
             app->view_dispatcher, PocsagViewSubmenu, submenu_get_view(app->submenu));
 
     app->view_id = PocsagViewSubmenu;
     view_dispatcher_switch_to_view(app->view_dispatcher, app->view_id);
+
+    app->subghz_tx_rx = pocsag_tx_rx_worker_alloc();
+    pocsag_tx_rx_worker_set_callback_have_read(app->subghz_tx_rx, subghz_tx_rx_read_callback, app);
+//    pocsag_hal_reset();
+
     return app;
 }
 
@@ -47,6 +104,12 @@ void pocsag_app_free(PocsagApp* app) {
     submenu_free(app->submenu);
     furi_record_close(RECORD_GUI);
     app->gui = NULL;
+
+    if(pocsag_tx_rx_worker_is_running(app->subghz_tx_rx)) {
+        pocsag_tx_rx_worker_stop(app->subghz_tx_rx);
+        furi_hal_power_suppress_charge_exit();
+    }
+    pocsag_tx_rx_worker_free(app->subghz_tx_rx);
     free(app);
 }
 
