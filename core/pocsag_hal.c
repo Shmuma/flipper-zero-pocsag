@@ -19,8 +19,8 @@ static const uint8_t furi_hal_subghz_preset_2fsk_dev9_5khz_async_regs[][2] = {
         {CC1101_MDMCFG0, 0x00},
         {CC1101_MDMCFG1, 0x02},
         {CC1101_MDMCFG2, 0x04}, // Format 2-FSK/FM, No preamble/sync, Disable (current optimized)
-        {CC1101_MDMCFG3, 0x83}, // Data rate is 4.79794 kBaud
-        {CC1101_MDMCFG4, 0x67}, //Rx BW filter is 270.833333 kHz
+        {CC1101_MDMCFG3, 0x83}, // Data rate is 1.2 kBaud
+        {CC1101_MDMCFG4, 0x85}, //0x85 //Rx BW filter is 270.833333 kHz
         {CC1101_DEVIATN, 0x24}, //Deviation 9.5 kHz
 
         /* Main Radio Control State Machine */
